@@ -69,7 +69,9 @@ class QwenReasonHelperText:
         )
 
         if self.webDataAvailable:
-            content += f" Web data available: {self.textFromWeb[:1000]}"
+            print("Data Available from web for query: "+query)
+            content += f" Web data available: {self.textFromWeb}"
+            print(f"Text length {len(self.textFromWeb)}")
         return {
             "messages": [
                 {
@@ -83,8 +85,6 @@ class QwenReasonHelperText:
                                     respond to the user questions in crisp and short manner. 
                                     You have to guide the user step by step in the tasks ask for. Once the steps are completed, remove them from state.
                                     Just leave a short message for simple general questions.
-                                    If working in chemical labs or experiments alert about gloves if you see the hand without gloves.
-                                    Only mention objects/actions that are clearly visible.
                                     Do not assume unseen details.
 
                                     give response as
@@ -196,13 +196,15 @@ class QwenReasonHelperText:
                 
                 self.last_json_context = self.repair_json(raw_json)
                 needed, query = self.extract_web_query()
-                if (needed==True or needed=="true") and query not in self.previousWebQueries:
+                if (needed==True or needed=="True") and query not in self.previousWebQueries:
                     print("Doing ")
                     self.previousWebQueries.append(query)
-                    # self.textFromWeb = self.crawler.run(query)
+                    self.textFromWeb = self.crawler.run(query)
                     self.webDataAvailable = True
-                    thread = Thread(target=self.crawler.run, kwargs=query)
-                    thread.start()
+                    print
+                    # self.crawler.run(query)
+                    # thread = Thread(target=self.crawler.run, kwargs=query)
+                    # thread.start()
                     
                 asyncio.create_task(
                     self.contextManag.update_state("state",self.last_json_context)
@@ -260,8 +262,20 @@ class QwenReasonHelperText:
     def extract_web_query(self):
         data = self.last_json_context
         if not isinstance(data, dict):
-            print("context not a dict")
-            return None, None
+            print("context not dict")
+            query_match = re.search(r'"query":\s*"([^"]+)"', data)
+            needed_match = re.search(r'"needed":\s*(True|False|true|false)', data)
+            extracted_query=None
+            val=None
+            if query_match:
+                extracted_query = query_match.group(1)
+
+            if needed_match:
+                # Handle both Python (True) and JSON (true) formats
+                val = needed_match.group(1).lower() == 'true'
+            print(val,extracted_query)
+            return val, extracted_query
+        
 
         web_info = data.get("needExtraInfoFromWeb", {})
 

@@ -137,19 +137,20 @@ class CrustPDF:
         print(f"Found {len(pdf_links)} PDFs")
 
         results = []
+        text=""
 
         for pdf_url in pdf_links:
             pdf_path = self.download_pdf(pdf_url)
             if pdf_path:
                 text = self.extract_text(pdf_path)
-                print(text)
+                # print(text)
                 results.append({
                     "url": pdf_url,
                     "file": pdf_path,
                 })
             break
 
-        return results
+        return text
 
 
 # -----------------------------
