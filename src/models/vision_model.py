@@ -15,6 +15,8 @@ import asyncio
 from huggingface_hub import login
 from dotenv import load_dotenv
 import os
+from transformers import TextIteratorStreamer
+from threading import Thread
 
 load_dotenv()
 login(os.getenv("HF_TOKEN"))
@@ -40,6 +42,24 @@ class VisionHelper:
         self.contextManag = ContextManager()
 
         """
+                                        observe state context if there are any steps scheduled and help the user.
+
+                                give response as json: 
+
+        {
+                                    "detail": "", //Image details
+                                    "further_steps":[
+                                        ## Get the steps from context and update status
+                                        "step_1":{
+                                            "content":"",
+                                            "status":"Completed/Not Completed/Currently scheduled",
+                                            "summary":""
+                                        }
+                                    ],
+                                    "additional_context":"",
+                                    "messageToUser":"" // only important message to user -- very very important message only regarding deviation from steps or very brief summary about completed action and next step if any
+                                }
+
         example:
                                 {
                                     "detail": "Test tubes and Hydrochloric acid bottle are visible",
@@ -65,23 +85,7 @@ class VisionHelper:
                                 Give description about what you see in the current images. Extract all the text that you see.
                                 The context contains latest vision info, which is the same info that you have observed previously.
                                 Observe the steps which are essential to complete user ask in the,
-                                Every detail you see visually has to be covered. 
-                                observe state context if there are any steps scheduled and help the user.
-        
-                                give response as json: 
-                                {
-                                    "detail": "", //Image details
-                                    "further_steps":[
-                                        ## Get the steps from context and update status
-                                        "step_1":{
-                                            "content":"",
-                                            "status":"Completed/Not Completed/Currently scheduled",
-                                            "summary":""
-                                        }
-                                    ],
-                                    "additional_context":"",
-                                    "messageToUser":"" // only important message to user -- very very important message only regarding deviation from steps or very brief summary about completed action and next step if any
-                                }
+                                Every detail you see visually has to be covered in brief in plain text. Do not reason about past frames. Give very precisely and briefly.
                             """        
 
     def create_sample(self, query,images):
@@ -92,7 +96,7 @@ class VisionHelper:
         content = [
             {
                 "type": "text",
-                "text": f"{self.system_message}. Analyze the change and give detail in brief, Answer any user queries if they are not answered previously: {audioQues}, take help of the context and the steps if necessary: {context}"
+                "text": f"{self.system_message}. Analyze the change and give detail in brief"
             }
         ]
 
@@ -113,32 +117,53 @@ class VisionHelper:
         ]
         }
     
-    def _predict_sync(self, images):
-        
-
+    def _predict_sync(self, images, loop):
         sample = self.create_sample("", images)
 
-        output = self.generate_text_from_sample(sample)
+        # start frame (safe)
+        frame_id = asyncio.run(self.contextManag.start_new_frame())
 
-        try:
-            parsed = json.loads(output)
-            if isinstance(parsed, dict):
-                text = parsed.get("detail", output)
-                state = {}
-                state["further_steps"]=parsed.get("further_steps", output)
-                state["additional_context"]=parsed.get("additional_context", output)
-                asyncio.run(self.contextManag.add_vision(text))
-                asyncio.run(self.contextManag.update_state("state",state))
-            return output
-        except Exception as e:
-            print("Error in vision model: ",e)
+        streamer = self.generate_stream(sample)
 
-    async def predict(self,images):
-        return await asyncio.to_thread(self._predict_sync, images)
+        buffer = ""
+        last_update_len = 0
+
+        for token in streamer:
+            buffer += token
+
+            if len(buffer) - last_update_len > 50:
+                last_update_len = len(buffer)
+
+                # 🔥 schedule on MAIN loop
+                loop.call_soon_threadsafe(
+                    asyncio.create_task,
+                    self.contextManag.add_vision_partial(buffer, frame_id)
+                )
+
+        # finalize
+        loop.call_soon_threadsafe(
+            asyncio.create_task,
+            self.contextManag.finalize_vision(frame_id)
+        )
+
+        return buffer
+
+    async def predict(self, images):
+        loop = asyncio.get_running_loop()  # ✅ capture main loop
+        return await asyncio.to_thread(self._predict_sync, images, loop)
         # query=""
         # context = await self.contextManag.get_context_summary()
         # sample = self.create_sample(query,images,context)
         # output = self.generate_text_from_sample(sample,device=self.device)
+
+                    # parsed = json.loads(output)
+            # if isinstance(parsed, dict):
+            #     text = parsed.get("detail", output)
+            #     state = {}
+            #     state["further_steps"]=parsed.get("further_steps", output)
+            #     state["additional_context"]=parsed.get("additional_context", output)
+            #     asyncio.run(self.contextManag.add_vision(text))
+            #     asyncio.run(self.contextManag.update_state("state",state))
         
 
     
@@ -166,4 +191,31 @@ class VisionHelper:
 
         print("Generated output:\n", output)
         return output
-        
+    
+    def generate_stream(self, sample, device="cuda"):
+        inputs = self.processor.apply_chat_template(
+            sample['messages'],
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt"
+        ).to(device, torch.float16)
+
+        streamer = TextIteratorStreamer(
+            self.processor.tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True
+        )
+
+        generation_kwargs = dict(
+            **inputs,
+            streamer=streamer,
+            max_new_tokens=512,
+            use_cache=True,
+        )
+
+        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        thread.start()
+
+        return streamer
+            

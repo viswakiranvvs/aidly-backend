@@ -83,12 +83,11 @@ class QwenReasonHelperText:
                                     Do NOT say "image", "description", or "context".
                                     Speak as if you directly see what is happening.
                                     respond to the user questions in crisp and short manner. 
-                                    You have to guide the user step by step in the tasks ask for. Once the steps are completed, remove them from state.
-                                    Just leave a short message for simple general questions.
+                                    You have to guide the user in the tasks ask for. Once the steps are completed, mark them complete.
                                     Do not assume unseen details.
 
                                     give response as
-                                    current_response: "plain text ending with /aaawd"
+                                    current_response: "plain text answering user question perfectly and ending with /aaawd"
 
                                     followed by
                                     json_response:
@@ -100,10 +99,83 @@ class QwenReasonHelperText:
                                                 "status":"Completed/Not Completed/Currently scheduled"
                                             }
                                         ],
+                                        "completed_steps":[
+                                            ## Put all completed steps here
+                                        ]
                                         "additional_context":"",
-                                        "needExtraInfoFromWeb" : { //If you dont know much about the product and you want to make a web call about guide or user manual example: HP Printer Laser MFP 323sdnw
-                                            "needed": True/False (boolean),
-                                            "query": "HP Printer Laser MFP 323sdnw User guide or manual"
+                                    }
+
+                                    Synthesis of copper nanoparticles knowledge:
+                                    strictly Follow these steps carefully and go to steps in order when user confirms a step is done - do not comeback to previous steps
+                                    in
+                                    {   
+                                        "step_1": "Prepare leaching solution by dissolving 0.5 M diammonium hydrogen citrate in 8 percent ammonia solution.",
+                                        "step_2": "Transfer 50 ml of leaching solution into a 100 ml beaker and stir magnetically at 450 rpm in a fume hood.",
+                                        "step_3": "Gradually add 1 g of copper powder to the solution.",
+                                        "step_4": "Allow complete dissolution (~20 hours) to form a copper amine complex, confirmed visually.",
+                                        "step_5": "Validate copper concentration using Atomic Absorption Spectrophotometry.",
+                                        "step_6": "Use the resulting solution as the precursor for nanoparticle synthesis.",
+                                        "step_7": "Prepare precursor solution by mixing 0.5 ml of copper amine complex leachate with 9.5 ml of DEG.",
+                                        "step_8": "Prepare reducing agent solution by dissolving 0.25 g ascorbic acid in 18 ml DEG.",
+                                        "step_9": "Prepare capping agent solution by dissolving 1 g polyvinyl pyrrolidone (PVP) in 50 ml DEG.",
+                                        "step_10": "Ultrasonicate all three solutions separately for 20 minutes at 40 kHz and 80°C.",
+                                        "step_11": "Set up the reaction system using a conical flask with magnetic stirring and temperature control.",
+                                        "step_12": "Carry out nanoparticle synthesis in a water bath (≤80°C) or oil bath (>100°C) depending on reaction temperature."
+                                        "chemical information": {
+                                            "leaching_solution": {
+                                                "diammonium_hydrogen_citrate": {
+                                                "molarity": "0.5 M",
+                                                "mass": "5.65 g"
+                                                },
+                                                "ammonia_solution": {
+                                                "concentration": "8%",
+                                                "volume": "16 ml"
+                                                },
+                                                "prepared_volume_used": "50 ml",
+                                                "stirring_speed": "450 rpm",
+                                                "copper_powder_added": "1 g",
+                                                "dissolution_time": "20 h"
+                                            },
+                                            "precursor_solution": {
+                                                "leachate_volume": "0.5 ml",
+                                                "DEG_volume": "9.5 ml",
+                                                "total_volume": "10 ml"
+                                            },
+                                            "reducing_agent_solution": {
+                                                "ascorbic_acid_mass": "0.25 g",
+                                                "DEG_volume": "18 ml"
+                                            },
+                                            "capping_agent_solution": {
+                                                "PVP_mass": "1 g",
+                                                "DEG_volume": "50 ml"
+                                            },
+                                            "ultrasonication": {
+                                                "time": "20 min",
+                                                "frequency": "40 kHz",
+                                                "temperature": "80 °C"
+                                            },
+                                            "reaction_conditions": {
+                                                "stirring_speed": "450 rpm",
+                                                "water_bath_temperature": "≤ 80 °C",
+                                                "oil_bath_temperature": "> 100 °C"
+                                            },
+                                            "reaction_sequence": {
+                                                "step_1": "Add 50 ml of capping agent solution to conical flask",
+                                                "step_2": "Stir at 450 rpm",
+                                                "step_3": "After 2 min, add 18 ml reducing agent solution",
+                                                "step_4": "Stir for 2 min",
+                                                "step_5": "Add 10 ml precursor solution dropwise over 30 s"
+                                            },
+                                            "observations": {
+                                                "color_change": {
+                                                "dark_brown": "high nanoparticle concentration",
+                                                "light_brown": "low nanoparticle concentration"
+                                                }
+                                            }
+                                        }
+                                        "sample questions": {
+                                            "how to prepare copper lechate solution": "Take 8% of ammonia solution by dissolving diammonium hydrogen citrate of 0.5 Molar which is 16ml of ammonia solution and 5.65 grams of diammonium hydrogen citrate",
+                                            "I see blue solution prepared after 20 hours do you think it is copper lechate solution": "Yes copper lechate will be in blue color, and I see its a dark blue solution which indicates strong copper lechate, lets go to next step"
                                         }
                                     }
                                 """
@@ -195,13 +267,13 @@ class QwenReasonHelperText:
                 # final_json = json.loads(raw_json)
                 
                 self.last_json_context = self.repair_json(raw_json)
-                needed, query = self.extract_web_query()
-                if (needed==True or needed=="True") and query not in self.previousWebQueries:
-                    print("Doing ")
-                    self.previousWebQueries.append(query)
-                    self.textFromWeb = self.crawler.run(query)
-                    self.webDataAvailable = True
-                    print
+                # needed, query = self.extract_web_query()
+                # if (needed==True or needed=="True") and query not in self.previousWebQueries:
+                #     print("Doing ")
+                #     self.previousWebQueries.append(query)
+                #     self.textFromWeb = self.crawler.run(query)
+                #     self.webDataAvailable = True
+                #     print
                     # self.crawler.run(query)
                     # thread = Thread(target=self.crawler.run, kwargs=query)
                     # thread.start()
@@ -259,27 +331,27 @@ class QwenReasonHelperText:
             except:
                 return json_str
     
-    def extract_web_query(self):
-        data = self.last_json_context
-        if not isinstance(data, dict):
-            print("context not dict")
-            query_match = re.search(r'"query":\s*"([^"]+)"', data)
-            needed_match = re.search(r'"needed":\s*(True|False|true|false)', data)
-            extracted_query=None
-            val=None
-            if query_match:
-                extracted_query = query_match.group(1)
+    # def extract_web_query(self):
+    #     data = self.last_json_context
+    #     if not isinstance(data, dict):
+    #         print("context not dict")
+    #         query_match = re.search(r'"query":\s*"([^"]+)"', data)
+    #         needed_match = re.search(r'"needed":\s*(True|False|true|false)', data)
+    #         extracted_query=None
+    #         val=None
+    #         if query_match:
+    #             extracted_query = query_match.group(1)
 
-            if needed_match:
-                # Handle both Python (True) and JSON (true) formats
-                val = needed_match.group(1).lower() == 'true'
-            print(val,extracted_query)
-            return val, extracted_query
+    #         if needed_match:
+    #             # Handle both Python (True) and JSON (true) formats
+    #             val = needed_match.group(1).lower() == 'true'
+    #         print(val,extracted_query)
+    #         return val, extracted_query
         
 
-        web_info = data.get("needExtraInfoFromWeb", {})
+    #     web_info = data.get("needExtraInfoFromWeb", {})
 
-        needed = str(web_info.get("needed", "false")).lower() == "true"
-        query = web_info.get("query")
-        print(needed,query)
-        return needed, query
+    #     needed = str(web_info.get("needed", "false")).lower() == "true"
+    #     query = web_info.get("query")
+    #     print(needed,query)
+    #     return needed, query

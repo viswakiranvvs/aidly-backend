@@ -4,9 +4,12 @@ import io
 import base64
 from models.vision_model import VisionHelper
 import asyncio
+from datetime import datetime
+from helper.call_respond_helper import CallAndRespond
+from helper.context_helper import ContextManager
 
 class FrameDiffProcessor:
-    def __init__(self, max_frames=4, threshold=39.0):
+    def __init__(self, qwenTextModel, max_frames=4, threshold=45.0):
         """
         max_frames: number of frames to keep in buffer
         threshold: mean pixel difference threshold (tune this)
@@ -19,6 +22,9 @@ class FrameDiffProcessor:
         self.warmup_frames = 1  # process first 3 frames always
         self.skip_frames = 0
         self.cooldown_frames = 3
+        self.contextManag = ContextManager()
+        self.call_respond = CallAndRespond(qwenTextModel)
+
 
     def _preprocess(self, image_bytes):
         """
@@ -36,7 +42,7 @@ class FrameDiffProcessor:
 
         return frame_np
 
-    def add_frame(self, frame_base64):
+    def add_frame(self, frame_base64, websocket):
         image_bytes = base64.b64decode(frame_base64)
         current_frame = self._preprocess(image_bytes)
 
@@ -49,7 +55,7 @@ class FrameDiffProcessor:
             asyncio.create_task(
                 self.vision_model.predict(self._prepare_images(self.frame_buffer.copy()))
             )
-            return
+            return 0
 
         # if len(self.frame_buffer) < self.max_frames:
         #     return
@@ -59,7 +65,7 @@ class FrameDiffProcessor:
             print(f"[Cooldown] Skipping frame, remaining: {self.skip_frames}")
             if len(self.frame_buffer) > self.max_frames:
                 self.frame_buffer.pop(0)
-            return
+            return 0
 
         oldest_frame = self.frame_buffer[0]
         diff = self._compute_diff(oldest_frame, current_frame)
@@ -74,6 +80,12 @@ class FrameDiffProcessor:
             asyncio.create_task(
                 self.vision_model.predict(self._prepare_images(self.frame_buffer[-2:]))
             )
+
+            if self.checkIfNoQuesForNsec():
+                asyncio.create_task(
+                    self.callReasoning(websocket)
+                )
+                
 
         if len(self.frame_buffer) > self.max_frames:
             self.frame_buffer.pop(0)
@@ -90,3 +102,33 @@ class FrameDiffProcessor:
             img = Image.fromarray(frame.astype('uint8'))
             images.append(img)
         return images
+    
+    def checkIfNoQuesForNsec(self, sec=4):
+        """
+        Checks if the duration since the last LLM interaction 
+        exceeds the specified number of seconds.
+        """
+        lastTs = self.contextManag.get_last_llm_timestamp()
+        
+        if lastTs is None:
+            return False
+            
+        currentTs = datetime.now().timestamp()
+        
+        silence_duration = currentTs - lastTs
+        
+        # 4. Return True if silence exceeds the threshold
+        if silence_duration >= sec:
+            print(f"Silence detected for {silence_duration:.2f}s. Triggering reasoning...")
+            return True
+            
+        return False
+    
+    async def callReasoning(self,websocket):
+        audioQuesCtx = await self.contextManag.get_audio_context()
+        context = await self.contextManag.get_context_summary()
+        text="User has not asked any questions but has performed some actions, if they are not following guidelines or safety precautions give current_response, or if a step has been completed guide him next"
+        asyncio.create_task(
+            self.call_respond.process_and_send_response(websocket,context,text,audioQuesCtx)
+        )
+
